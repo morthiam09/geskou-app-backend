@@ -18,7 +18,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.morth.geskou.model.Product;
 import com.morth.geskou.service.ProductService;
-import com.morth.geskou.service.PercentageRawMaterialService;
 
 @RestController
 @RequestMapping("/api/products")
@@ -27,9 +26,6 @@ public class ProductController {
 
     @Autowired
     private ProductService productService; // Injection
-
-    @Autowired
-    private PercentageRawMaterialService percentageRawMaterialService;
 
     // Ajouter un produit avec la gestion de l'unicité de la référence
     @PostMapping
@@ -81,7 +77,7 @@ public class ProductController {
     public ResponseEntity<?> deleteProduct(@PathVariable Integer id) {
         try {
             productService.deleteProductById(id);
-            return ResponseEntity.ok("Produit supprimé avec succès");
+            return ResponseEntity.noContent().build();
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
         }
