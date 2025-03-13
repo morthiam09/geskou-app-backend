@@ -19,4 +19,5 @@ public interface ProductRepository extends CrudRepository<Product, Integer>{
     List<Product> findByReferenceOrName(String reference, String name);
     void deleteById(Integer id);
     void deleteByReference(String reference);
+    boolean existsByReference(String reference);
 }
