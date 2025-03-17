@@ -1,104 +1,90 @@
 package com.morth.geskou.service;
-
-import com.morth.geskou.model.ProductionCost;
-import com.morth.geskou.model.Product;
-import com.morth.geskou.model.PercentageRawMaterial;
-import com.morth.geskou.dao.ProductionCostRepository;
-import com.morth.geskou.dao.ProductRepository;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
-import java.util.List;
+import com.morth.geskou.dao.CostCalculationRepository;
+import com.morth.geskou.dto.CostCalculationRequest;
+import com.morth.geskou.dto.CostCalculationResponse;
+import com.morth.geskou.model.CostCalculation;
+
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class ProductionCostService {
 
     @Autowired
-    private ProductionCostRepository productionCostRepository;
+    private CostCalculationRepository repository;
 
-    @Autowired
-    private ProductRepository productRepository;
+    public CostCalculationResponse calculateCosts(CostCalculationRequest request) {
+        Map<String, Double> categoryTotals = new HashMap<>();
+        double totalCost = 0.0;
 
-    //Gère le calcul et l'enregistrement du coût de production
-    public ProductionCost calculateAndSaveProductionCost(Integer productId, double laborCost,
-                                                         double energyCost, double depreciationCost,
-                                                         double indirectCost) {
+        // Calcul pour chaque catégorie
+        for (CostCalculationRequest.Category category : request.getCategories()) {
+            double categoryTotal = calculateCategoryTotal(category);
+            categoryTotals.put(category.getName(), categoryTotal);
+            totalCost += categoryTotal;
+        }
 
-        Product product = validateProductExists(productId);
-        validateRawMaterialPercentage(product);
+        // Ajout des marges
+        double costWithMargin = totalCost * (1 + (request.getMargeBeneficiaire() / 100));
+        double finalCost = costWithMargin * (1 + (request.getMargeErreur() / 100));
+        double unitCost = finalCost / request.getTotalUnitesProduites();
+        double suggestedPrice = unitCost * (1 + (request.getMargeBeneficiaire() / 100));
 
-        double rawMaterialCost = calculateRawMaterialCost(product);
-        double totalCost = calculateTotalProductionCost(rawMaterialCost, laborCost, energyCost, depreciationCost, indirectCost);
-        double sellingPrice = calculateSellingPrice(totalCost, product.getProfitMargin());
+        // Création de l'entité pour la persistance
+        CostCalculation costCalculation = createCostCalculationEntity(request, categoryTotals, finalCost, unitCost, suggestedPrice);
+        repository.save(costCalculation);
 
-        return saveProductionCost(product, rawMaterialCost, laborCost, energyCost, depreciationCost, indirectCost, sellingPrice);
+        // Création de la réponse
+        return createResponse(categoryTotals, finalCost, unitCost, suggestedPrice);
     }
 
-    //Vérifie si le produit existe
-    private Product validateProductExists(Integer productId) {
-        return productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Produit non trouvé avec l'ID: " + productId));
-    }
-
-
-    // Vérifie si la somme des pourcentages des matières premières est bien égale à 100%.
-
-    private void validateRawMaterialPercentage(Product product) {
-        double totalPercentage = product.getPercentageRawMaterials().stream()
-                .mapToDouble(PercentageRawMaterial::getPercentage)
-                .sum();
-        if (totalPercentage != 100) {
-            throw new RuntimeException("La somme des pourcentages des matières premières doit être égale à 100%");
+    private double calculateCategoryTotal(CostCalculationRequest.Category category) {
+        Map<String, Double> params = category.getParameters();
+        switch (category.getName()) {
+            case "Matières premières":
+                return (params.get("quantité (kg)") * params.get("prix unitaire (€)")) 
+                       + params.get("transport (€)") + params.get("pertes (€)");
+            case "Main-d'œuvre":
+                return (params.get("heures") * params.get("taux horaire (€)")) 
+                       + params.get("charges sociales (€)");
+            case "Packaging":
+                return (params.get("cout Matériaux (€)") + params.get("cout Confection (€)")) 
+                       * params.get("volume Emballage");
+            // ... autres cas similaires pour chaque catégorie
+            default:
+                return params.values().stream().mapToDouble(Double::doubleValue).sum();
         }
     }
 
-    // Calcule le coût des matières premières basé sur les pourcentages
-    private double calculateRawMaterialCost(Product product) {
-        return product.getPercentageRawMaterials().stream()
-                .mapToDouble(prm -> (prm.getRawMaterial().getUnitPrice() * prm.getPercentage()) / 100)
-                .sum();
+    private CostCalculation createCostCalculationEntity(CostCalculationRequest request, 
+                                                      Map<String, Double> categoryTotals,
+                                                      double finalCost, 
+                                                      double unitCost, 
+                                                      double suggestedPrice) {
+        CostCalculation entity = new CostCalculation();
+        entity.setProductId(request.getProductId());
+        entity.setMargeBeneficiaire(request.getMargeBeneficiaire());
+        entity.setMargeErreur(request.getMargeErreur());
+        entity.setTotalUnitesProduites(request.getTotalUnitesProduites());
+        entity.setCalculationDate(LocalDateTime.now());
+        // ... configuration des autres champs
+        return entity;
     }
 
-
-    // Calcule le coût total de production
-    private double calculateTotalProductionCost(double rawMaterialCost, double laborCost, 
-                                                double energyCost, double depreciationCost, double indirectCost) {
-        return rawMaterialCost + laborCost + energyCost + depreciationCost + indirectCost;
-    }
-
-    // Calcule le prix de vente recommandé
-    private double calculateSellingPrice(double totalCost, double profitMargin) {
-        return totalCost * (1 + profitMargin / 100);
-    }
-
-    // Crée et enregistre un coût de production
-
-    private ProductionCost saveProductionCost(Product product, double rawMaterialCost, 
-                                              double laborCost, double energyCost, 
-                                              double depreciationCost, double indirectCost, 
-                                              double sellingPrice) {
-
-        ProductionCost productionCost = new ProductionCost(product, rawMaterialCost, laborCost,
-                energyCost, depreciationCost, indirectCost, product.getProfitMargin());
-
-        productionCostRepository.save(productionCost);
-
-        // Mise à jour du produit
-        product.setProductionCost(productionCost.getTotalCost());
-        product.setRecommendedSellingPrice(sellingPrice);
-        productRepository.save(product);
-
-        return productionCost;
-    }
-
-    // Récupérer l'historique des coûts de production d'un produit
-
-    public List<ProductionCost> getProductionCostHistory(Integer productId) {
-        return productionCostRepository.findByProductId(productId);
-    }
-
-    //Récupérer tout les historiques des coûts de production
-    public List<ProductionCost> getAllProductionCostHistory() {
-        return productionCostRepository.findAll();
+    private CostCalculationResponse createResponse(Map<String, Double> categoryTotals, 
+                                                 double finalCost, 
+                                                 double unitCost, 
+                                                 double suggestedPrice) {
+        CostCalculationResponse response = new CostCalculationResponse();
+        response.setTotalCost(finalCost);
+        response.setUnitCost(unitCost);
+        response.setSuggestedPrice(suggestedPrice);
+        response.setCategoryCosts(categoryTotals);
+        return response;
     }
 }
