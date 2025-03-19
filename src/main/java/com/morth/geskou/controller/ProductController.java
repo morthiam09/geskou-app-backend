@@ -28,7 +28,7 @@ public class ProductController {
     private ProductService productService; // Injection
 
     // Ajouter un produit avec la gestion de l'unicité de la référence
-    @PostMapping
+    @PostMapping("/create")
     public ResponseEntity<?> createProduct(@RequestBody Product product) {
         try {
             Product createdProduct = productService.createProduct(product);
