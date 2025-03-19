@@ -9,6 +9,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,6 +27,7 @@ import com.morth.geskou.security.repository.UserRepository;
 
 @RestController
 @RequestMapping("/api/auth")
+@CrossOrigin(origins = "*", maxAge = 3600)
 public class AuthController {
 
     private final UserRepository userRepository;
@@ -44,7 +46,9 @@ public class AuthController {
     }
 
     @PostMapping("/register")
+    @CrossOrigin(origins = "*", maxAge = 3600)
     public ResponseEntity<String> register(@RequestBody RegisterDTO registerDto) {
+        System.out.println("registerDto: " + registerDto);
         if (userRepository.existsByEmail(registerDto.getEmail())) {
             return new ResponseEntity<>("Username is already taken!", HttpStatus.BAD_REQUEST);
         }
